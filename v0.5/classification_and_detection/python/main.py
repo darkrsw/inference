@@ -45,7 +45,7 @@ SUPPORTED_DATASETS = {
          {"image_size": [300, 300, 3]}),
     "coco-300-pt":
         (coco.Coco, dataset.pre_process_coco_pt_mobilenet, coco.PostProcessCocoPt(False,0.3),
-         {"image_size": [300, 300, 3]}),         
+         {"image_size": [300, 300, 3]}),
     "coco-1200":
         (coco.Coco, dataset.pre_process_coco_resnet34, coco.PostProcessCoco(),
          {"image_size": [1200, 1200, 3]}),
@@ -238,7 +238,7 @@ def get_backend(backend):
         backend = BackendPytorch()
     elif backend == "pytorch-native":
         from backend_pytorch_native import BackendPytorchNative
-        backend = BackendPytorchNative()      
+        backend = BackendPytorchNative()
     elif backend == "tflite":
         from backend_tflite import BackendTflite
         backend = BackendTflite()
@@ -467,6 +467,7 @@ def main():
     runner = runner_map[scenario](model, ds, args.threads, post_proc=post_proc, max_batchsize=args.max_batchsize)
 
     def issue_queries(query_samples):
+        print("# samples issued: ", len(query_samples))
         runner.enqueue(query_samples)
 
     def flush_queries():
