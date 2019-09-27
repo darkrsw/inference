@@ -301,6 +301,7 @@ class RunnerBase:
                 bi = response_array.buffer_info()
                 response.append(lg.QuerySampleResponse(query_id, bi[0], bi[1]))
             lg.QuerySamplesComplete(response)
+            print("Query completed: ", query_id)
 
     def enqueue(self, query_samples):
         idx = [q.index for q in query_samples]
