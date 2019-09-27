@@ -44,7 +44,7 @@ dependencies.
 ## Debian
 
 - Common tools and libraries.
-- [Python](https://www.python.org/), [pip](https://pypi.org/project/pip/), [SciPy](https://www.scipy.org/), [Collective Knowledge](https://cknowledge.org) (CK).
+- [Python](https://www.python.org/), [pip](https://pypi.org/project/pip/), [NumPy](https://numpy.org/), [Collective Knowledge](https://cknowledge.org) (CK).
 - (Optional) [Android SDK](https://developer.android.com/studio/), [Android NDK](https://developer.android.com/ndk/).
 
 ### Install common tools and libraries
@@ -97,18 +97,18 @@ with CK at the same time (so there is less chance of mixing things up).
 
 #### Option 1: system-wide installation via pip (under `/usr`)
 ```bash
-$ sudo python3 -m pip install scipy==1.2.1 ck
+$ sudo python3 -m pip install numpy ck
 ```
 #### Option 2: user-space installation via pip (under `$HOME`)
 ```bash
-$ python3 -m pip install scipy==1.2.1 ck --user
+$ python3 -m pip install numpy ck --user
 ```
 #### Option 3: User-space installation via CK (under `$HOME` and `$CK_TOOLS`)
 Install CK via pip (or [from GitHub](https://github.com/ctuning/ck#installation)):
 ```bash
 $ python3 -m pip install ck --user
 $ ck version
-V1.9.7
+V1.10.3
 ```
 
 Install and register Python packages with CK:
@@ -116,7 +116,6 @@ Install and register Python packages with CK:
 $ ck pull repo:ck-env
 $ ck detect soft:compiler.python --full_path=`which python3`
 $ ck install package --tags=lib,python-package,numpy
-$ ck install package --tags=lib,python-package,scipy --force_version=1.2.1
 ```
 
 If the above dependencies have been installed on a clean system, you should be
@@ -126,11 +125,9 @@ $ ck show env --tags=python-package
 Env UID:         Target OS: Bits: Name:                     Version: Tags:
 
 4e82bab01c8ee3b7   linux-64    64 Python NumPy library      1.16.2   64bits,host-os-linux-64,lib,needs-python,needs-python-3.5.2,numpy,python-package,target-os-linux-64,v1,v1.16,v1.16.2,vmaster
-66642698751a2fcf   linux-64    64 Python SciPy library      1.2.1    64bits,host-os-linux-64,lib,needs-python,needs-python-3.5.2,python-package,scipy,target-os-linux-64,v1,v1.2,v1.2.1,vmaster
 
 $ ck cat env --tags=python-package | grep PYTHONPATH
 export PYTHONPATH=/home/anton/CK_TOOLS/lib-python-numpy-compiler.python-3.5.2-linux-64/build:${PYTHONPATH}
-export PYTHONPATH=/home/anton/CK_TOOLS/lib-python-scipy-compiler.python-3.5.2-linux-64/build:${PYTHONPATH}
 ```
 
 ### [Optional] Install Android SDK and NDK
@@ -174,6 +171,76 @@ $ ck install package:imagenet-2012-val
 ```bash
 $ ck detect soft:dataset.imagenet.val --full_path=$HOME/ilsvrc2012-val/ILSVRC2012_val_00000001.JPEG
 ```
+
+### Preprocess datasets
+
+ImageNet can be preprocessed in many different ways,
+which can significantly affect the resulting accuracy.
+We currently support 3 different preprocessing methods:
+```
+$ ck install package --tags=dataset,imagenet,preprocessed
+
+More than one package or version found:
+
+ 0) dataset-imagenet-preprocessed-using-tensorflow (fac1d0d5f4e69a85)
+ 1) dataset-imagenet-preprocessed-using-pillow (a6a4613ba6dfd570)
+ 2) dataset-imagenet-preprocessed-using-opencv (4932bbdd2ac7a17b)
+
+Please select the package to install [ hit return for "0" ]: 
+```
+
+Preprocessing using OpenCV (option 2) is the current official method.
+You can perform it directly by adding the `using-opencv` tag as follows:
+```
+$ ck install package --tags=dataset,imagenet,preprocessed,using-opencv --ask
+```
+
+You can locate the preprocessed files on disk using the same tags as follows:
+```
+$ ck cat env --tags=dataset,imagenet,preprocessed,using-opencv | grep CK_ENV_DATASET_IMAGENET_PREPROCESSED_DIR
+export CK_ENV_DATASET_IMAGENET_PREPROCESSED_DIR=/datasets/dataset-imagenet-preprocessed-using-opencv
+```
+
+CK installs all the dependencies automatically. (More information on recommended choices for dependencies can be provided on demand.)
+
+#### Summary of preprocessing methods
+
+The table below summarizes the available methods.
+
+| Model                | Pillow            | OpenCV universal         | OpenCV for MobileNet         | OpenCV for ResNet         | TensorFlow         |
+|-|-|-|-|-|-|
+| Matches official?    | No                | No                       | Yes                          | Yes                       | No                 |
+| Additional tags      | `using-pillow`    | `using-opencv,universal` | `using-opencv,for-mobilenet` | `using-opencv,for-resnet` | `using-tensorflow` |
+| Supported models     | ResNet, MobileNet | ResNet, MobileNet        | MobileNet only               | ResNet only               | ResNet only        |
+| Supported platforms  | x86, arm          | x86                      | x86                          | x86                       | x86 (prebuilt TF)  |
+| Data format          | rgb8 (int8)       | rgb8 (int8)              | rgbf32 (float32)             | rgbf32 (float32)          | rgbf32 (float32)   |
+| Data size            | 7.1G              | 7.1G                     | 29G                          | 29G                       | 29G                |
+
+The official code [preprocesses](https://github.com/mlperf/inference/blob/master/v0.5/classification_and_detection/python/dataset.py) images using OpenCV. ResNet and MobileNet require different preprocessing after resizing: ResNet requires [means to be subtracted](https://github.com/mlperf/inference/blob/master/v0.5/classification_and_detection/python/dataset.py#L178); MobileNet requires [normalization to the (-1, 1) range](https://github.com/mlperf/inference/blob/master/v0.5/classification_and_detection/python/dataset.py#L195). In addition, the official ResNet preprocessing uses [area interpolation](https://github.com/mlperf/inference/blob/master/v0.5/classification_and_detection/python/dataset.py#L172), instead of the default [bilinear interpolation](https://github.com/mlperf/inference/blob/master/v0.5/classification_and_detection/python/dataset.py#L154). The same behaviour can be reproduced via CK. Preprocessed images for both MobileNet and ResNet, however, require 58G on disk, as pixels are stored as 32-bit floats.
+
+An alternative, dubbed OpenCV (universal), uses bilinear interpolation and stores pixels as 8-bit integers. At load time, however, minor additional processing may be required depending on the model (e.g. see sample [code for normalization](https://github.com/ctuning/ck-tensorflow/blob/master/program/image-classification-tflite/benchmark.h#L463) and [code for subtracting means](https://github.com/ctuning/ck-tensorflow/blob/master/program/image-classification-tflite/benchmark.h#L469)).
+
+
+#### Accuracy on the ImageNet 2012 validation set
+
+The table below shows the accuracy on the ImageNet 2012 validation set
+(50,000 images) measured [via TensorFlow (C++)](tf-cpp/README.md).
+
+| Model                   | Metric | Pillow  | OpenCV universal | OpenCV for MobileNet | OpenCV for ResNet | TensorFlow |
+|-|-|-|-|-|-|-|
+| ResNet                  |  Top1  | 0.76170 | 0.76422          | N/A                  | 0.76456           | 0.76522    |
+|                         |  Top5  | 0.92866 | 0.93074          | N/A                  | 0.93016           | 0.93066    |
+| MobileNet non-quantized |  Top1  | 0.71226 | 0.71676          | 0.71676              | N/A               | N/A        |
+|                         |  Top5  | 0.89834 | 0.90118          | 0.90118              | N/A               | N/A        |
+| MobileNet quantized     |  Top1  | 0.70348 | 0.70700          | 0.70694              | N/A               | N/A        |
+|                         |  Top5  | 0.89376 | 0.89594          | 0.89594              | N/A               | N/A        |
+
+Considering Top1, the universal OpenCV method is slightly less accurate for ResNet, but slightly more accurate for MobileNet quantized than the official code. The TensorFlow method is most accurate for ResNet, but is not suitable for MobileNet. The Pillow method is least accurate, but can be used on Arm platforms. The difference between the universal OpenCV and the TensorFlow methods on ResNet is exactly 0.1% or 50 images.
+
+#### Detect datasets preprocessed on a different machine
+
+**TODO**
+
 
 <a name="benchmarking"></a>
 ## Benchmarking
@@ -341,7 +408,7 @@ $ grep CK_CROP_PERCENT /home/anton/CK_REPOS/local/experiment/mlperf-mobilenet-tf
 ```
 
 This can be changed by passing e.g. `--env.CK_CROP_PERCENT=100` to `ck
-benchmark` (but see [here](tf-cpp/README.md#accuracy) how this can make results worse).
+benchmark` (but see [here](https://github.com/mlperf/inference/tree/21efaf57d55ccd78e77b87c668bb09d47564bb6a/v0.5/classification_and_detection/optional_harness_ck/classification/tf-cpp#reference-accuracy) how this can make results worse).
 
 
 ### Visualizing experimental results

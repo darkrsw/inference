@@ -21,7 +21,7 @@ log = logging.getLogger("coco")
 
 class Coco(dataset.Dataset):
     def __init__(self, data_path, image_list, name, use_cache=0, image_size=None,
-                 image_format="NHWC", pre_process=None, count=None, cache_dir=None):
+                 image_format="NHWC", pre_process=None, count=None, cache_dir=None,use_label_map=False):
         super().__init__()
         self.image_size = image_size
         self.image_list = []
@@ -32,16 +32,25 @@ class Coco(dataset.Dataset):
         self.use_cache = use_cache
         self.data_path = data_path
         self.pre_process = pre_process
+        self.use_label_map=use_label_map
         if not cache_dir:
             cache_dir = os.getcwd()
         self.cache_dir = os.path.join(cache_dir, "preprocessed", name, image_format)
         # input images are in HWC
         self.need_transpose = True if image_format == "NCHW" else False
-        not_found = 0
+        not_found = 0 
+        empty_80catageories = 0
         if image_list is None:
             # by default look for val_map.txt
             image_list = os.path.join(data_path, "annotations/instances_val2017.json")
         self.annotation_file = image_list
+        if self.use_label_map:
+            # for pytorch
+            label_map = {}
+            with open(self.annotation_file) as fin:
+                annotations = json.load(fin)
+            for cnt, cat in enumerate(annotations["categories"]):
+                label_map[cat["id"]] = cnt + 1
 
         os.makedirs(self.cache_dir, exist_ok=True)
         start = time.time()
@@ -58,7 +67,8 @@ class Coco(dataset.Dataset):
             i = images.get(a["image_id"])
             if i is None:
                 continue
-            i["category"].append(a.get("category_id"))
+            catagory_ids = label_map[a.get("category_id")] if self.use_label_map else a.get("category_id")
+            i["category"].append(catagory_ids)
             i["bbox"].append(a.get("bbox"))
 
         for image_id, img in images.items():
@@ -68,6 +78,11 @@ class Coco(dataset.Dataset):
                 # if the image does not exists ignore it
                 not_found += 1
                 continue
+            if len(img["category"])==0 and self.use_label_map: 
+                #if an image doesn't have any of the 81 categories in it    
+                empty_80catageories += 1 #should be 48 images - thus the validation sert has 4952 images
+                continue 
+
             os.makedirs(os.path.dirname(os.path.join(self.cache_dir, image_name)), exist_ok=True)
             dst = os.path.join(self.cache_dir, image_name)
             if not os.path.exists(dst + ".npy"):
@@ -82,7 +97,7 @@ class Coco(dataset.Dataset):
             self.label_list.append((img["category"], img["bbox"]))
 
             # limit the dataset if requested
-            if self.count and len(self.image_list) > self.count:
+            if self.count and len(self.image_list) >= self.count:
                 break
 
         time_taken = time.time() - start
@@ -91,6 +106,8 @@ class Coco(dataset.Dataset):
             raise ValueError("no images in image list found")
         if not_found > 0:
             log.info("reduced image list, %d images not found", not_found)
+        if empty_80catageories > 0:
+            log.info("reduced image list, %d images without any of the 80 categories", empty_80catageories)
 
         log.info("loaded {} images, cache={}, took={:.1f}sec".format(
             len(self.image_list), use_cache, time_taken))
@@ -116,6 +133,7 @@ class PostProcessCoco:
         self.results = []
         self.good = 0
         self.total = 0
+        self.content_ids = []
         self.use_inv_map = False
 
     def add_results(self, results):
@@ -128,6 +146,8 @@ class PostProcessCoco:
         # batch size
         bs = len(results[0])
         for idx in range(0, bs):
+            # keep the content_id from loadgen to handle content_id's without results
+            self.content_ids.append(ids[idx])
             processed_results.append([])
             detection_num = int(results[0][idx])
             detection_boxes = results[1][idx]
@@ -153,7 +173,6 @@ class PostProcessCoco:
     def finalize(self, result_dict, ds=None, output_dir=None):
         result_dict["good"] += self.good
         result_dict["total"] += self.total
-        image_ids = []
 
         if self.use_inv_map:
             # for pytorch
@@ -165,14 +184,19 @@ class PostProcessCoco:
             inv_map = {v:k for k,v in label_map.items()}
 
         detections = []
+        image_indices = []
         for batch in range(0, len(self.results)):
+            image_indices.append(self.content_ids[batch])
             for idx in range(0, len(self.results[batch])):
                 detection = self.results[batch][idx]
-                image_id = int(detection[0])
-                image_ids.append(image_id)
-                # map it to the coco image it
-                detection[0] = ds.image_ids[image_id]
-                height, width = ds.image_sizes[image_id]
+                # this is the index of the coco image
+                image_idx = int(detection[0])
+                if image_idx != self.content_ids[batch]:
+                    # working with the coco index/id is error prone - extra check to make sure it is consistent
+                    log.error("image_idx missmatch, lg={} / result={}".format(image_idx, self.content_ids[batch]))
+                # map the index to the coco image id
+                detection[0] = ds.image_ids[image_idx]
+                height, width = ds.image_sizes[image_idx]
                 # box comes from model as: ymin, xmin, ymax, xmax
                 ymin = detection[1] * height
                 xmin = detection[2] * width
@@ -191,25 +215,8 @@ class PostProcessCoco:
                     detection[6] =  cat_id
                 detections.append(np.array(detection))
 
-        # for debugging
-        if output_dir:
-            # for debugging
-            pp = []
-            for detection in detections:
-                pp.append({"image_id": int(detection[0]),
-                           "image_loc": ds.get_item_loc(image_ids[idx]),
-                           "category_id": int(detection[6]),
-                           "bbox": [float(detection[1]), float(detection[2]),
-                                    float(detection[3]), float(detection[4])],
-                           "score": float(detection[5])})
-            if not output_dir:
-                output_dir = "/tmp"
-            fname = "{}/{}.json".format(output_dir, result_dict["scenario"])
-            with open(fname, "w") as fp:
-                json.dump(pp, fp, sort_keys=True, indent=4)
-
-
-        image_ids = list(set([i[0] for i in detections]))
+        # map indices to coco image id's
+        image_ids = [ds.image_ids[i]  for i in image_indices]
         self.results = []
         cocoGt = pycoco.COCO(ds.annotation_file)
         cocoDt = cocoGt.loadRes(np.array(detections))
@@ -252,10 +259,10 @@ class PostProcessCocoPt(PostProcessCoco):
                     self.good += 1
                 box = detection_boxes[detection]
                 # comes from model as:  0=xmax 1=ymax 2=xmin 3=ymin
-                processed_results[idx].append([[float(ids[idx]),
+                processed_results[idx].append([float(ids[idx]),
                                               box[1], box[0], box[3], box[2],
                                               scores[detection],
-                                              float(detection_class)]])
+                                              float(detection_class)])
                 self.total += 1
         return processed_results
 
