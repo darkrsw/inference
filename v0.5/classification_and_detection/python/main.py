@@ -467,12 +467,12 @@ def main():
     }
     runner = runner_map[scenario](model, ds, args.threads, post_proc=post_proc, max_batchsize=args.max_batchsize)
 
-    num_queries = 0
+    #num_queries = 0
 
     def issue_queries(query_samples):
         nqueries = len(query_samples)
-        num_queries += nqueries
-        print("total # samples issued: ", num_queries)
+        #num_queries += nqueries
+        print("total # samples issued: ", nqueries)
         runner.enqueue(query_samples)
 
     def flush_queries():
