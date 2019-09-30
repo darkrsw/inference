@@ -268,6 +268,7 @@ class RunnerBase:
         self.take_accuracy = False
         self.max_batchsize = max_batchsize
         self.result_timing = []
+        self.total_samples = 0
 
     def handle_tasks(self, tasks_queue):
         pass
@@ -304,6 +305,10 @@ class RunnerBase:
             #print("Query completed: ", query_id)
 
     def enqueue(self, query_samples):
+        nqueries = len(query_samples)
+        self.total_samples += nqueries
+        print("total # samples issued: ", self.total_samples)
+
         idx = [q.index for q in query_samples]
         query_id = [q.id for q in query_samples]
         if len(query_samples) < self.max_batchsize:
@@ -467,12 +472,7 @@ def main():
     }
     runner = runner_map[scenario](model, ds, args.threads, post_proc=post_proc, max_batchsize=args.max_batchsize)
 
-    #num_queries = 0
-
     def issue_queries(query_samples):
-        nqueries = len(query_samples)
-        #num_queries += nqueries
-        print("total # samples issued: ", nqueries)
         runner.enqueue(query_samples)
 
     def flush_queries():
