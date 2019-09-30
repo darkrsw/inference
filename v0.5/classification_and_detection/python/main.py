@@ -301,7 +301,7 @@ class RunnerBase:
                 bi = response_array.buffer_info()
                 response.append(lg.QuerySampleResponse(query_id, bi[0], bi[1]))
             lg.QuerySamplesComplete(response)
-            print("Query completed: ", query_id)
+            #print("Query completed: ", query_id)
 
     def enqueue(self, query_samples):
         idx = [q.index for q in query_samples]
@@ -467,8 +467,12 @@ def main():
     }
     runner = runner_map[scenario](model, ds, args.threads, post_proc=post_proc, max_batchsize=args.max_batchsize)
 
+    num_queries = 0
+
     def issue_queries(query_samples):
-        print("# samples issued: ", len(query_samples))
+        nqueries = len(query_samples)
+        num_queries += nqueries
+        print("total # samples issued: ", num_queries)
         runner.enqueue(query_samples)
 
     def flush_queries():
