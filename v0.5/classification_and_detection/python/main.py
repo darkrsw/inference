@@ -269,6 +269,7 @@ class RunnerBase:
         self.max_batchsize = max_batchsize
         self.result_timing = []
         self.total_samples = 0
+        self.total_qcount = 0
 
     def handle_tasks(self, tasks_queue):
         pass
@@ -305,10 +306,14 @@ class RunnerBase:
             #print("Query completed: ", query_id)
 
     def enqueue(self, query_samples):
+        self.total_qcount += 1
         nqueries = len(query_samples)
         self.total_samples += nqueries
         if(self.total_samples % 100 == 0):
             print("total # samples issued: ", self.total_samples)
+
+        if(self.total_qcount % 100 == 0):
+            print("total # queries issued: ", self.total_qcount)
 
         idx = [q.index for q in query_samples]
         query_id = [q.id for q in query_samples]
@@ -350,10 +355,14 @@ class QueueRunner(RunnerBase):
             tasks_queue.task_done()
 
     def enqueue(self, query_samples):
+        self.total_qcount += 1
         nqueries = len(query_samples)
         self.total_samples += nqueries
         if(self.total_samples % 100 == 0):
             print("total # samples issued: ", self.total_samples)
+
+        if(self.total_qcount % 100 == 0):
+            print("total # queries issued: ", self.total_qcount)
 
         idx = [q.index for q in query_samples]
         query_id = [q.id for q in query_samples]
