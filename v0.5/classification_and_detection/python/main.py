@@ -307,7 +307,7 @@ class RunnerBase:
     def enqueue(self, query_samples):
         nqueries = len(query_samples)
         self.total_samples += nqueries
-        if(self.total_samples % 100 = 0)
+        if(self.total_samples % 100 == 0)
             print("total # samples issued: ", self.total_samples)
 
         idx = [q.index for q in query_samples]
@@ -352,7 +352,7 @@ class QueueRunner(RunnerBase):
     def enqueue(self, query_samples):
         nqueries = len(query_samples)
         self.total_samples += nqueries
-        if(self.total_samples % 100 = 0)
+        if(self.total_samples % 100 == 0)
             print("total # samples issued: ", self.total_samples)
 
         idx = [q.index for q in query_samples]
